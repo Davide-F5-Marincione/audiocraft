@@ -442,8 +442,10 @@ class MagnetLMModel(LMModel):
             # TODO: add rescorer
             if rescorer:
                 # Rescoring
-                rescorer_logits = rescorer.compute_predictions(gen_sequence, conditions=None, condition_tensors=rescorer_conditions).logits[:, [stage]]
+                rescorer.attn_mask_per_stage = self.attn_mask_per_stage
+                rescorer_logits = rescorer.compute_predictions(gen_sequence, conditions=None, condition_tensors=rescorer_conditions, stage=stage).logits[:, [stage]]
                 rescorer_probs = torch.softmax(rescorer_logits / rescorer_temp[steps_left], dim=-1)
+                # print(rescorer_probs.shape, sampled_probs.shape, rescorer_probs.min(), rescorer_probs.max())
                 rescorer_sampled_probs = torch.gather(rescorer_probs, 3, sampled_tokens)[..., 0]
                 # Final probs are the convex combination of probs and rescorer_probs
                 sampled_probs = rescore_weights[steps_left] * rescorer_sampled_probs + (1 - rescore_weights[steps_left]) * sampled_probs
