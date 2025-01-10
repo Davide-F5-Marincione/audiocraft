@@ -278,7 +278,6 @@ class MagnetLMModel(LMModel):
 
         return gen_sequence
 
-    @torch.compile
     @torch.no_grad()
     def _generate_stage(self,
                         gen_sequence: torch.Tensor,
