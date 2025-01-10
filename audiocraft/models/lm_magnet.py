@@ -215,8 +215,7 @@ class MagnetLMModel(LMModel):
         cfg_conditions: tp.Optional[ConditionTensors]
         if conditions:
             null_conditions = ClassifierFreeGuidanceDropout(p=1.0)(conditions)
-            conditions = conditions + null_conditions
-            tokenized = self.condition_provider.tokenize(conditions)
+            tokenized = self.condition_provider.tokenize(conditions + null_conditions)
             cfg_conditions = self.condition_provider(tokenized)
         else:
             cfg_conditions = {}
