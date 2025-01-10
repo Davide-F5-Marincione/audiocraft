@@ -239,7 +239,9 @@ class MagnetLMModel(LMModel):
         # create the gen_sequence with proper interleaving from the pattern: [B, K, S]
         gen_sequence = gen_codes
 
+        rescorer_conditions = None
         if rescorer is not None:
+            assert rescorer.special_token_id == mask_id, "Rescorer model should have the same mask id."
             rescorer_conditions = rescorer.cfg_dropout(conditions)
             rescorer_conditions = rescorer.att_dropout(rescorer_conditions)
             rescorer_conditions = rescorer.condition_provider.tokenize(rescorer_conditions)
