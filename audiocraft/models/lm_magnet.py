@@ -241,7 +241,6 @@ class MagnetLMModel(LMModel):
 
         rescorer_conditions = None
         if rescorer is not None:
-            assert rescorer.special_token_id == mask_id, "Rescorer model should have the same mask id."
             rescorer_conditions = rescorer.cfg_dropout(conditions)
             rescorer_conditions = rescorer.att_dropout(rescorer_conditions)
             rescorer_conditions = rescorer.condition_provider.tokenize(rescorer_conditions)
@@ -444,7 +443,7 @@ class MagnetLMModel(LMModel):
                 # Rescoring
                 rescorer_logits = rescorer.compute_predictions(gen_sequence, conditions=None, condition_tensors=rescorer_conditions).logits[:, [stage]]
                 rescorer_probs = torch.softmax(rescorer_logits / rescorer_temp[steps_left], dim=-1)
-                # print(rescorer_probs.shape, sampled_probs.shape, rescorer_probs.min(), rescorer_probs.max())
+                print(rescorer_probs.shape, sampled_tokens.shape)
                 rescorer_sampled_probs = torch.gather(rescorer_probs, 3, sampled_tokens)[..., 0]
                 # Final probs are the convex combination of probs and rescorer_probs
                 sampled_probs = rescore_weights[steps_left] * rescorer_sampled_probs + (1 - rescore_weights[steps_left]) * sampled_probs
