@@ -240,6 +240,14 @@ class MagnetLMModel(LMModel):
         # create the gen_sequence with proper interleaving from the pattern: [B, K, S]
         gen_sequence = gen_codes
 
+        if rescorer is not None:
+            rescorer_conditions = rescorer.cfg_dropout(conditions)
+            rescorer_conditions = rescorer.att_dropout(rescorer_conditions)
+            rescorer_conditions = rescorer.condition_provider.tokenize(rescorer_conditions)
+            # encode conditions and fuse, both have a streaming cache to not recompute when generating.
+            rescorer_conditions = rescorer.condition_provider(rescorer_conditions)
+
+
         curr_step = 0
         for stage, n_steps in zip(range(self.n_q), decoding_steps):
             gen_sequence, curr_step = self._generate_stage(gen_sequence,
@@ -263,7 +271,8 @@ class MagnetLMModel(LMModel):
                                                            callback=callback,
                                                            rescorer=rescorer,
                                                            rescore_weights=rescore_weights,
-                                                           rescorer_temp=rescorer_temp)
+                                                           rescorer_temp=rescorer_temp,
+                                                           rescorer_conditions=rescorer_conditions)
 
         return gen_sequence
 
@@ -290,7 +299,8 @@ class MagnetLMModel(LMModel):
                         callback: tp.Optional[tp.Callable[[int, int], None]] = None,
                         rescorer: LMModel = None,
                         rescore_weights: torch.Tensor | float = 0.7,
-                        rescorer_temp: torch.Tensor | float = 1) -> tp.Tuple[torch.Tensor, int]:
+                        rescorer_temp: torch.Tensor | float = 1,
+                        rescorer_conditions = tp.Optional[ConditionTensors]) -> tp.Tuple[torch.Tensor, int]:
         """Generate audio tokens of a single RVQ level (stage), given the previously generated stages,
            and the textual conditions.
         Args:
@@ -431,7 +441,7 @@ class MagnetLMModel(LMModel):
             # TODO: add rescorer
             if rescorer:
                 # Rescoring
-                rescorer_logits, rescorer_mask = rescorer.compute_predictions(gen_sequence, conditions=None, condition_tensors=condition_tensors[:gen_sequence.shape[0]])
+                rescorer_logits, rescorer_mask = rescorer.compute_predictions(gen_sequence, conditions=None, condition_tensors=rescorer_conditions)
                 rescorer_probs = torch.softmax(rescorer_logits / rescorer_temp[steps_left], dim=-1)
                 rescorer_sampled_probs = torch.gather(rescorer_probs, 3, sampled_tokens)[..., 0]
                 # Final probs are the convex combination of probs and rescorer_probs
