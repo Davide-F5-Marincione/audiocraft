@@ -164,7 +164,10 @@ class MagnetLMModel(LMModel):
                          decoding_steps: tp.List[int] = [20, 10, 10, 10],
                          anneal_temp: bool = True,
                          span_scoring='max',
-                         span_arrangement='nonoverlap') -> torch.Tensor:
+                         span_arrangement='nonoverlap',
+                         rescorer: LMModel = None,
+                         rescore_weights: torch.Tensor | float = 0.7,
+                         rescorer_temp: torch.Tensor | float = 1) -> torch.Tensor:
         """Generate audio tokens given textual conditions, and optionally given audio prompts,
         by running MAGNeT's iterative decoding algorithm for each of the n_q RVQ levels.
         Args:
@@ -257,7 +260,10 @@ class MagnetLMModel(LMModel):
                                                            span_arrangement=span_arrangement,
                                                            curr_step=curr_step,
                                                            total_steps=sum(decoding_steps),
-                                                           callback=callback)
+                                                           callback=callback,
+                                                           rescorer=rescorer,
+                                                           rescore_weights=rescore_weights,
+                                                           rescorer_temp=rescorer_temp)
 
         return gen_sequence
 
@@ -281,7 +287,10 @@ class MagnetLMModel(LMModel):
                         span_arrangement: str = 'nonoverlap',
                         curr_step: int = 0,
                         total_steps: int = 0,
-                        callback: tp.Optional[tp.Callable[[int, int], None]] = None) -> tp.Tuple[torch.Tensor, int]:
+                        callback: tp.Optional[tp.Callable[[int, int], None]] = None,
+                        rescorer: LMModel = None,
+                        rescore_weights: torch.Tensor | float = 0.7,
+                        rescorer_temp: torch.Tensor | float = 1) -> tp.Tuple[torch.Tensor, int]:
         """Generate audio tokens of a single RVQ level (stage), given the previously generated stages,
            and the textual conditions.
         Args:
@@ -341,6 +350,12 @@ class MagnetLMModel(LMModel):
             scores = torch.zeros(shape, dtype=torch.float32, device=device)
             scores[..., :prompt_length] = DONT_REMASK_ME_SCORE
             gen_T = T - prompt_length
+
+        if isinstance(rescore_weights, float):
+            rescore_weights = torch.ones(timesteps, device=device) * rescore_weights
+        
+        if isinstance(rescorer_temp, float):
+            rescorer_temp = torch.ones(timesteps, device=device) * rescorer_temp
 
         # run MAGNeT iterative decoding for "timesteps" iterations
         for timestep, steps_left in zip(torch.linspace(0, 1, timesteps, device=device), reversed(range(timesteps))):
@@ -412,6 +427,16 @@ class MagnetLMModel(LMModel):
 
             # get probs of sampled tokens
             sampled_probs = torch.gather(probs, 3, sampled_tokens)[..., 0]
+
+            # TODO: add rescorer
+            if rescorer:
+                # Rescoring
+                rescorer_logits, rescorer_mask = rescorer.compute_predictions(gen_sequence, condition_tensors=condition_tensors, stage=stage)
+                rescorer_probs = torch.softmax(rescorer_logits / rescorer_temp[steps_left], dim=-1)
+                rescorer_sampled_probs = torch.gather(rescorer_probs, 3, sampled_tokens)[..., 0]
+                # Final probs are the convex combination of probs and rescorer_probs
+                sampled_probs = rescore_weights[steps_left] * rescorer_sampled_probs + (1 - rescore_weights[steps_left]) * sampled_probs
+
 
             # span scoring
             if chunk_masking:
