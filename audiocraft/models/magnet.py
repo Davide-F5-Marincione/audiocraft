@@ -12,6 +12,7 @@ import typing as tp
 import torch
 
 from .genmodel import BaseGenModel
+from .lm import LMModel
 from .loaders import load_compression_model, load_lm_model_magnet
 
 
@@ -61,7 +62,10 @@ class MAGNeT(BaseGenModel):
                               top_p: float = 0.9, temperature: float = 3.0,
                               max_cfg_coef: float = 10.0, min_cfg_coef: float = 1.0,
                               decoding_steps: tp.List[int] = [20, 10, 10, 10],
-                              span_arrangement: str = 'nonoverlap'):
+                              span_arrangement: str = 'nonoverlap',
+                              rescorer: LMModel = None,
+                              rescore_weights: torch.Tensor | float = 0.7,
+                              rescorer_temp: torch.Tensor | float = 1):
         """Set the generation parameters for MAGNeT.
 
         Args:
@@ -84,5 +88,8 @@ class MAGNeT(BaseGenModel):
             'max_cfg_coef': max_cfg_coef,
             'min_cfg_coef': min_cfg_coef,
             'decoding_steps': [int(s) for s in decoding_steps],
-            'span_arrangement': span_arrangement
+            'span_arrangement': span_arrangement,
+            'rescorer': rescorer,
+            'rescore_weights': rescore_weights,
+            'rescorer_temp': rescorer_temp
         }
