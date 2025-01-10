@@ -251,7 +251,8 @@ class MagnetLMModel(LMModel):
 
 
         curr_step = 0
-        for stage, n_steps in tqdm.tqdm(zip(range(self.n_q), decoding_steps)):
+        pbar = tqdm.tqdm(total=sum(decoding_steps), desc="Generating", leave=False)
+        for stage, n_steps in zip(range(self.n_q), decoding_steps):
             gen_sequence, curr_step = self._generate_stage(gen_sequence,
                                                            cfg_conditions,
                                                            stage=stage,
@@ -274,7 +275,8 @@ class MagnetLMModel(LMModel):
                                                            rescorer=rescorer,
                                                            rescore_weights=rescore_weights,
                                                            rescorer_temp=rescorer_temp,
-                                                           rescorer_conditions=rescorer_conditions)
+                                                           rescorer_conditions=rescorer_conditions,
+                                                           pbar=pbar)
 
         return gen_sequence
 
@@ -302,7 +304,8 @@ class MagnetLMModel(LMModel):
                         rescorer: LMModel = None,
                         rescore_weights: torch.Tensor | float = 0.7,
                         rescorer_temp: torch.Tensor | float = 1.0,
-                        rescorer_conditions = tp.Optional[ConditionTensors]) -> tp.Tuple[torch.Tensor, int]:
+                        rescorer_conditions = tp.Optional[ConditionTensors],
+                        pbar: tqdm.tqdm = None) -> tp.Tuple[torch.Tensor, int]:
         """Generate audio tokens of a single RVQ level (stage), given the previously generated stages,
            and the textual conditions.
         Args:
@@ -473,6 +476,9 @@ class MagnetLMModel(LMModel):
             if callback is not None:
                 curr_step += 1
                 callback(curr_step, total_steps)
+            
+            if pbar is not None:
+                pbar.update(1)
 
         return gen_sequence, curr_step
 
