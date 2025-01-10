@@ -167,7 +167,7 @@ class MagnetLMModel(LMModel):
                          span_arrangement='nonoverlap',
                          rescorer: LMModel = None,
                          rescore_weights: torch.Tensor | float = 0.7,
-                         rescorer_temp: torch.Tensor | float = 1) -> torch.Tensor:
+                         rescorer_temp: torch.Tensor | float = 1.0) -> torch.Tensor:
         """Generate audio tokens given textual conditions, and optionally given audio prompts,
         by running MAGNeT's iterative decoding algorithm for each of the n_q RVQ levels.
         Args:
@@ -298,7 +298,7 @@ class MagnetLMModel(LMModel):
                         callback: tp.Optional[tp.Callable[[int, int], None]] = None,
                         rescorer: LMModel = None,
                         rescore_weights: torch.Tensor | float = 0.7,
-                        rescorer_temp: torch.Tensor | float = 1,
+                        rescorer_temp: torch.Tensor | float = 1.0,
                         rescorer_conditions = tp.Optional[ConditionTensors]) -> tp.Tuple[torch.Tensor, int]:
         """Generate audio tokens of a single RVQ level (stage), given the previously generated stages,
            and the textual conditions.
