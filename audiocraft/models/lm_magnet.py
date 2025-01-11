@@ -245,7 +245,7 @@ class MagnetLMModel(LMModel):
         rescorer_conditions = None
         if rescorer is not None:
             assert rescorer.special_token_id == mask_id, "Rescorer and generator should have the same mask id."
-            rescorer_conditions = rescorer.cfg_dropout(conditions)
+            rescorer_conditions = rescorer.cfg_dropout(conditions * (loop_trick_rotations + 1))
             rescorer_conditions = rescorer.att_dropout(rescorer_conditions)
             rescorer_conditions = rescorer.condition_provider.tokenize(rescorer_conditions)
             # encode conditions and fuse, both have a streaming cache to not recompute when generating.
