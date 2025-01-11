@@ -67,7 +67,10 @@ class MAGNeT(BaseGenModel):
                               rescore_weights: torch.Tensor | float = 0.7,
                               rescorer_temp: torch.Tensor | float = 1.0,
                               loop_trick_rotations: int = 0,
-                              loop_trick_aggregation: str = 'sum'):
+                              loop_trick_aggregation: str = 'sum',
+                              seam_enforce: float = 0.0,
+                              random_roll: bool = False,
+                              loop_pad: int = 0):
         """Set the generation parameters for MAGNeT.
 
         Args:
@@ -82,6 +85,7 @@ class MAGNeT(BaseGenModel):
             span_arrangement (str, optional): Use either non-overlapping spans ('nonoverlap')
                                               or overlapping spans ('stride1') in the masking scheme.
         """
+        self.loop_pad = loop_pad
         self.generation_params = {
             'use_sampling': use_sampling,
             'temp': temperature,
@@ -95,5 +99,18 @@ class MAGNeT(BaseGenModel):
             'rescore_weights': rescore_weights,
             'rescorer_temp': rescorer_temp,
             'loop_trick_rotations': loop_trick_rotations,
-            'loop_trick_aggregation': loop_trick_aggregation
+            'loop_trick_aggregation': loop_trick_aggregation,
+            'random_roll':random_roll,
+            'seam_enforce':seam_enforce
         }
+
+    def generate_audio(self, gen_tokens: torch.Tensor) -> torch.Tensor:
+        """Generate Audio from tokens."""
+        assert gen_tokens.dim() == 3
+        with torch.no_grad():
+            if self.loop_pad > 0:
+                gen_tokens = torch.cat([gen_tokens[..., -self.loop_pad:], gen_tokens, gen_tokens[... ,:self.loop_pad]], -1)
+            gen_audio = self.compression_model.decode(gen_tokens, None)
+            if self.loop_pad > 0:
+                gen_audio = gen_audio[..., 640 * self.loop_pad: -640*self.loop_pad]
+        return gen_audio

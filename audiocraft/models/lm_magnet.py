@@ -170,7 +170,9 @@ class MagnetLMModel(LMModel):
                          rescore_weights: torch.Tensor | float = 0.7,
                          rescorer_temp: torch.Tensor | float = 1.0,
                          loop_trick_rotations: int = 0,
-                         loop_trick_aggregation: str = 'sum') -> torch.Tensor:
+                         loop_trick_aggregation: str = 'sum',
+                         seam_enforce: float = 0.0,
+                         random_roll: bool = False) -> torch.Tensor:
         """Generate audio tokens given textual conditions, and optionally given audio prompts,
         by running MAGNeT's iterative decoding algorithm for each of the n_q RVQ levels.
         Args:
@@ -279,6 +281,8 @@ class MagnetLMModel(LMModel):
                                                            rescorer_conditions=rescorer_conditions,
                                                            loop_trick_rotations=loop_trick_rotations,
                                                            loop_trick_aggregation=loop_trick_aggregation,
+                                                           seam_enforce=seam_enforce,
+                                                           random_roll=random_roll,
                                                            pbar=pbar)
 
         return gen_sequence
@@ -310,6 +314,8 @@ class MagnetLMModel(LMModel):
                         rescorer_conditions = tp.Optional[ConditionTensors],
                         loop_trick_rotations: int = 0,
                         loop_trick_aggregation: str = 'sum',
+                        seam_enforce: float = 0.0,
+                        random_roll: bool = False,
                         pbar: tqdm.tqdm = None) -> tp.Tuple[torch.Tensor, int]:
         """Generate audio tokens of a single RVQ level (stage), given the previously generated stages,
            and the textual conditions.
@@ -414,7 +420,12 @@ class MagnetLMModel(LMModel):
                 # duplicate input for classifier free guidance
                 sequence = torch.cat([gen_sequence, gen_sequence], dim=0)
 
+            if random_roll:
+                r = torch.randint(sequence.shape[-1], (1,)).item()
+                sequence = torch.roll(sequence, r, -1)
             all_logits = model(sequence, [], condition_tensors, stage=stage)
+            if random_roll:
+                all_logits = torch.roll(all_logits, -r, -2)
 
             if condition_tensors:
                 # classifier free guidance with annealing
@@ -461,6 +472,8 @@ class MagnetLMModel(LMModel):
                     match loop_trick_aggregation:
                         case 'sum':
                             rescorer_logits = torch.cat([torch.roll(rescorer_logits[i], -s, -2) for i, s in enumerate(shifts)], dim=0).sum(dim=0)
+                            if len(rescorer_logits.shape) < 4:
+                                rescorer_logits = rescorer_logits[None]
                             rescorer_probs = torch.softmax(rescorer_logits / rescorer_temp[steps_left], dim=-1)
                             rescorer_sampled_probs = torch.gather(rescorer_probs, 3, sampled_tokens)[..., 0]
                         case 'mean_probs':
@@ -479,14 +492,26 @@ class MagnetLMModel(LMModel):
                             rescorer_probs = torch.softmax(rescorer_logits / rescorer_temp[steps_left], dim=-1)
                             rescorer_sampled_probs = torch.gather(rescorer_probs, 4, sampled_tokens[None].expand(loop_trick_rotations+1, -1, -1, -1, -1))[..., 0]
                             rescorer_sampled_probs = torch.cat([torch.roll(rescorer_sampled_probs[i], -s, -2) for i, s in enumerate(shifts)], dim=0).prod(dim=0)
+                    if len(rescorer_sampled_probs.shape) < 3:
+                        rescorer_sampled_probs = rescorer_sampled_probs[None]
                 else:
                     # Normal Rescoring
                     rescorer_logits = rescorer.compute_predictions(gen_sequence, conditions=None, condition_tensors=rescorer_conditions).logits[:, [stage]]
 
                     rescorer_probs = torch.softmax(rescorer_logits / rescorer_temp[steps_left], dim=-1)
                     rescorer_sampled_probs = torch.gather(rescorer_probs, 3, sampled_tokens)[..., 0]
+
+                if loop_trick_rotations > 0 and seam_enforce > 0:
+                    weights = torch.exp(-(torch.arange(0, rescorer_sampled_probs.shape[-1]//2, device=device) / seam_enforce) ** 2)
+                    weights = torch.cat([weights, torch.flip(weights, (0,))])
+                    weights = (weights + (1 - weights) * rescore_weights[steps_left])[None, None].expand_as(rescorer_sampled_probs)
+                else:
+                    weights = rescore_weights[[steps_left]][None, None].expand_as(rescorer_sampled_probs)
                 # Final probs are the convex combination of probs and rescorer_probs
-                sampled_probs = rescore_weights[steps_left] * rescorer_sampled_probs + (1 - rescore_weights[steps_left]) * sampled_probs
+                # if loop_trick_rotations > 0 and loop_trick_enforce_ends > 0:
+                #     weights = torch.linspace(-rescorer_sampled_probs.shape[-1]/2,rescorer_sampled_probs.shape[-1]/2, device=rescorer_sampled_probs.device)
+
+                sampled_probs = weights * rescorer_sampled_probs + (1 - weights) * sampled_probs
 
 
             # span scoring
