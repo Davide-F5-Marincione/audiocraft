@@ -251,7 +251,6 @@ class MagnetLMModel(LMModel):
             # encode conditions and fuse, both have a streaming cache to not recompute when generating.
             rescorer_conditions = rescorer.condition_provider(rescorer_conditions)
 
-
         curr_step = 0
         pbar = tqdm.tqdm(total=sum(decoding_steps), desc="Generating", leave=False)
         for stage, n_steps in zip(range(self.n_q), decoding_steps):
@@ -458,18 +457,10 @@ class MagnetLMModel(LMModel):
                     shifts = [int(k * space) for k in range(loop_trick_rotations + 1)]
                     rot_gen_sequence = torch.cat([torch.roll(gen_sequence, s, -1) for s in shifts], dim=0)
                     rescorer_logits = rescorer.compute_predictions(rot_gen_sequence, conditions=None, condition_tensors=rescorer_conditions).logits[:, [stage]]
-                    rescorer_logits = rescorer_logits.view(loop_trick_rotations + 1, B, K, T, -1)
+                    rescorer_logits = rescorer_logits.view(loop_trick_rotations + 1, B, 1, T, -1)
                     match loop_trick_aggregation:
                         case 'sum':
                             rescorer_logits = torch.cat([torch.roll(rescorer_logits[i], -s, -2) for i, s in enumerate(shifts)], dim=0).sum(dim=0)
-                            rescorer_probs = torch.softmax(rescorer_logits / rescorer_temp[steps_left], dim=-1)
-                            rescorer_sampled_probs = torch.gather(rescorer_probs, 3, sampled_tokens)[..., 0]
-                        case 'mean':
-                            rescorer_logits = torch.cat([torch.roll(rescorer_logits[i], -s, -2) for i, s in enumerate(shifts)], dim=0).mean(dim=0)
-                            rescorer_probs = torch.softmax(rescorer_logits / rescorer_temp[steps_left], dim=-1)
-                            rescorer_sampled_probs = torch.gather(rescorer_probs, 3, sampled_tokens)[..., 0]
-                        case 'max':
-                            rescorer_logits = torch.cat([torch.roll(rescorer_logits[i], -s, -2) for i, s in enumerate(shifts)], dim=0).max(dim=0).values
                             rescorer_probs = torch.softmax(rescorer_logits / rescorer_temp[steps_left], dim=-1)
                             rescorer_sampled_probs = torch.gather(rescorer_probs, 3, sampled_tokens)[..., 0]
                         case 'mean_probs':
@@ -480,6 +471,10 @@ class MagnetLMModel(LMModel):
                             rescorer_probs = torch.softmax(rescorer_logits / rescorer_temp[steps_left], dim=-1)
                             rescorer_sampled_probs = torch.gather(rescorer_probs, 3, sampled_tokens[None])[..., 0]
                             rescorer_sampled_probs = torch.cat([torch.roll(rescorer_sampled_probs[i], -s, -2) for i, s in enumerate(shifts)], dim=0).max(dim=0).values
+                        case 'min_probs':
+                            rescorer_probs = torch.softmax(rescorer_logits / rescorer_temp[steps_left], dim=-1)
+                            rescorer_sampled_probs = torch.gather(rescorer_probs, 3, sampled_tokens[None])[..., 0]
+                            rescorer_sampled_probs = torch.cat([torch.roll(rescorer_sampled_probs[i], -s, -2) for i, s in enumerate(shifts)], dim=0).min(dim=0).values
                         case 'prod_probs':
                             rescorer_probs = torch.softmax(rescorer_logits / rescorer_temp[steps_left], dim=-1)
                             rescorer_sampled_probs = torch.gather(rescorer_probs, 3, sampled_tokens[None])[..., 0]
