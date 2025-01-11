@@ -465,19 +465,19 @@ class MagnetLMModel(LMModel):
                             rescorer_sampled_probs = torch.gather(rescorer_probs, 3, sampled_tokens)[..., 0]
                         case 'mean_probs':
                             rescorer_probs = torch.softmax(rescorer_logits / rescorer_temp[steps_left], dim=-1)
-                            rescorer_sampled_probs = torch.gather(rescorer_probs, 3, sampled_tokens[None])[..., 0]
+                            rescorer_sampled_probs = torch.gather(rescorer_probs, 4, sampled_tokens[None].expand(loop_trick_rotations+1, -1, -1, -1, -1))[..., 0]
                             rescorer_sampled_probs = torch.cat([torch.roll(rescorer_sampled_probs[i], -s, -2) for i, s in enumerate(shifts)], dim=0).mean(dim=0)
                         case 'max_probs':
                             rescorer_probs = torch.softmax(rescorer_logits / rescorer_temp[steps_left], dim=-1)
-                            rescorer_sampled_probs = torch.gather(rescorer_probs, 3, sampled_tokens[None])[..., 0]
+                            rescorer_sampled_probs = torch.gather(rescorer_probs, 4, sampled_tokens[None].expand(loop_trick_rotations+1, -1, -1, -1, -1))[..., 0]
                             rescorer_sampled_probs = torch.cat([torch.roll(rescorer_sampled_probs[i], -s, -2) for i, s in enumerate(shifts)], dim=0).max(dim=0).values
                         case 'min_probs':
                             rescorer_probs = torch.softmax(rescorer_logits / rescorer_temp[steps_left], dim=-1)
-                            rescorer_sampled_probs = torch.gather(rescorer_probs, 3, sampled_tokens[None])[..., 0]
+                            rescorer_sampled_probs = torch.gather(rescorer_probs, 4, sampled_tokens[None].expand(loop_trick_rotations+1, -1, -1, -1, -1))[..., 0]
                             rescorer_sampled_probs = torch.cat([torch.roll(rescorer_sampled_probs[i], -s, -2) for i, s in enumerate(shifts)], dim=0).min(dim=0).values
                         case 'prod_probs':
                             rescorer_probs = torch.softmax(rescorer_logits / rescorer_temp[steps_left], dim=-1)
-                            rescorer_sampled_probs = torch.gather(rescorer_probs, 3, sampled_tokens[None])[..., 0]
+                            rescorer_sampled_probs = torch.gather(rescorer_probs, 4, sampled_tokens[None].expand(loop_trick_rotations+1, -1, -1, -1, -1))[..., 0]
                             rescorer_sampled_probs = torch.cat([torch.roll(rescorer_sampled_probs[i], -s, -2) for i, s in enumerate(shifts)], dim=0).prod(dim=0)
                 else:
                     # Normal Rescoring
