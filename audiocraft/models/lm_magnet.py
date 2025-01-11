@@ -168,7 +168,9 @@ class MagnetLMModel(LMModel):
                          span_arrangement='nonoverlap',
                          rescorer: LMModel = None,
                          rescore_weights: torch.Tensor | float = 0.7,
-                         rescorer_temp: torch.Tensor | float = 1.0) -> torch.Tensor:
+                         rescorer_temp: torch.Tensor | float = 1.0,
+                         loop_trick_rotations: int = 0,
+                         loop_trick_aggregation: str = 'sum') -> torch.Tensor:
         """Generate audio tokens given textual conditions, and optionally given audio prompts,
         by running MAGNeT's iterative decoding algorithm for each of the n_q RVQ levels.
         Args:
@@ -276,6 +278,8 @@ class MagnetLMModel(LMModel):
                                                            rescore_weights=rescore_weights,
                                                            rescorer_temp=rescorer_temp,
                                                            rescorer_conditions=rescorer_conditions,
+                                                           loop_trick_rotations=loop_trick_rotations,
+                                                           loop_trick_aggregation=loop_trick_aggregation,
                                                            pbar=pbar)
 
         return gen_sequence
@@ -305,6 +309,8 @@ class MagnetLMModel(LMModel):
                         rescore_weights: torch.Tensor | float = 0.7,
                         rescorer_temp: torch.Tensor | float = 1.0,
                         rescorer_conditions = tp.Optional[ConditionTensors],
+                        loop_trick_rotations: int = 0,
+                        loop_trick_aggregation: str = 'sum',
                         pbar: tqdm.tqdm = None) -> tp.Tuple[torch.Tensor, int]:
         """Generate audio tokens of a single RVQ level (stage), given the previously generated stages,
            and the textual conditions.
@@ -445,10 +451,45 @@ class MagnetLMModel(LMModel):
 
             # TODO: add rescorer
             if rescorer:
-                # Rescoring
-                rescorer_logits = rescorer.compute_predictions(gen_sequence, conditions=None, condition_tensors=rescorer_conditions).logits[:, [stage]]
-                rescorer_probs = torch.softmax(rescorer_logits / rescorer_temp[steps_left], dim=-1)
-                rescorer_sampled_probs = torch.gather(rescorer_probs, 3, sampled_tokens)[..., 0]
+                if loop_trick_rotations > 0:
+                    # Rescoring for loops
+                    B, K, T = gen_sequence.shape
+                    space = T // (loop_trick_rotations + 1)
+                    shifts = [int(k * space) for k in range(loop_trick_rotations + 1)]
+                    rot_gen_sequence = torch.cat([torch.roll(gen_sequence, s, -1) for s in shifts], dim=0)
+                    rescorer_logits = rescorer.compute_predictions(rot_gen_sequence, conditions=None, condition_tensors=rescorer_conditions).logits[:, [stage]]
+                    rescorer_logits = rescorer_logits.view(loop_trick_rotations + 1, B, K, T, -1)
+                    match loop_trick_aggregation:
+                        case 'sum':
+                            rescorer_logits = torch.cat([torch.roll(rescorer_logits[i], -s, -2) for i, s in enumerate(shifts)], dim=0).sum(dim=0)
+                            rescorer_probs = torch.softmax(rescorer_logits / rescorer_temp[steps_left], dim=-1)
+                            rescorer_sampled_probs = torch.gather(rescorer_probs, 3, sampled_tokens)[..., 0]
+                        case 'mean':
+                            rescorer_logits = torch.cat([torch.roll(rescorer_logits[i], -s, -2) for i, s in enumerate(shifts)], dim=0).mean(dim=0)
+                            rescorer_probs = torch.softmax(rescorer_logits / rescorer_temp[steps_left], dim=-1)
+                            rescorer_sampled_probs = torch.gather(rescorer_probs, 3, sampled_tokens)[..., 0]
+                        case 'max':
+                            rescorer_logits = torch.cat([torch.roll(rescorer_logits[i], -s, -2) for i, s in enumerate(shifts)], dim=0).max(dim=0).values
+                            rescorer_probs = torch.softmax(rescorer_logits / rescorer_temp[steps_left], dim=-1)
+                            rescorer_sampled_probs = torch.gather(rescorer_probs, 3, sampled_tokens)[..., 0]
+                        case 'mean_probs':
+                            rescorer_probs = torch.softmax(rescorer_logits / rescorer_temp[steps_left], dim=-1)
+                            rescorer_sampled_probs = torch.gather(rescorer_probs, 3, sampled_tokens[None])[..., 0]
+                            rescorer_sampled_probs = torch.cat([torch.roll(rescorer_sampled_probs[i], -s, -2) for i, s in enumerate(shifts)], dim=0).mean(dim=0)
+                        case 'max_probs':
+                            rescorer_probs = torch.softmax(rescorer_logits / rescorer_temp[steps_left], dim=-1)
+                            rescorer_sampled_probs = torch.gather(rescorer_probs, 3, sampled_tokens[None])[..., 0]
+                            rescorer_sampled_probs = torch.cat([torch.roll(rescorer_sampled_probs[i], -s, -2) for i, s in enumerate(shifts)], dim=0).max(dim=0).values
+                        case 'prod_probs':
+                            rescorer_probs = torch.softmax(rescorer_logits / rescorer_temp[steps_left], dim=-1)
+                            rescorer_sampled_probs = torch.gather(rescorer_probs, 3, sampled_tokens[None])[..., 0]
+                            rescorer_sampled_probs = torch.cat([torch.roll(rescorer_sampled_probs[i], -s, -2) for i, s in enumerate(shifts)], dim=0).prod(dim=0)
+                else:
+                    # Normal Rescoring
+                    rescorer_logits = rescorer.compute_predictions(gen_sequence, conditions=None, condition_tensors=rescorer_conditions).logits[:, [stage]]
+
+                    rescorer_probs = torch.softmax(rescorer_logits / rescorer_temp[steps_left], dim=-1)
+                    rescorer_sampled_probs = torch.gather(rescorer_probs, 3, sampled_tokens)[..., 0]
                 # Final probs are the convex combination of probs and rescorer_probs
                 sampled_probs = rescore_weights[steps_left] * rescorer_sampled_probs + (1 - rescore_weights[steps_left]) * sampled_probs
 

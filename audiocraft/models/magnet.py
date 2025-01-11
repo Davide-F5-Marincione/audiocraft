@@ -65,7 +65,9 @@ class MAGNeT(BaseGenModel):
                               span_arrangement: str = 'nonoverlap',
                               rescorer: LMModel = None,
                               rescore_weights: torch.Tensor | float = 0.7,
-                              rescorer_temp: torch.Tensor | float = 1.0):
+                              rescorer_temp: torch.Tensor | float = 1.0,
+                              loop_trick_rotations: int = 0,
+                              loop_trick_aggregation: str = 'sum'):
         """Set the generation parameters for MAGNeT.
 
         Args:
@@ -91,5 +93,7 @@ class MAGNeT(BaseGenModel):
             'span_arrangement': span_arrangement,
             'rescorer': rescorer,
             'rescore_weights': rescore_weights,
-            'rescorer_temp': rescorer_temp
+            'rescorer_temp': rescorer_temp,
+            'loop_trick_rotations': loop_trick_rotations,
+            'loop_trick_aggregation': loop_trick_aggregation
         }
