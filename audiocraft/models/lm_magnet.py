@@ -463,9 +463,9 @@ class MagnetLMModel(LMModel):
                 rescorer_sampled_probs = torch.gather(rescorer_probs, 3, sampled_tokens)[..., 0]
 
                 # Take minimum prob and normalize to a normal prob
-                if pad > 0:
-                    rescorer_sampled_probs[..., pad:2*pad] = 1 - (1 - torch.min(rescorer_sampled_probs[..., pad:2*pad],rescorer_sampled_probs[..., -pad:])) ** 2
-                    rescorer_sampled_probs[..., -2*pad:-pad] = 1 - (1 - torch.min(rescorer_sampled_probs[..., -2*pad:-pad],rescorer_sampled_probs[..., :pad])) ** 2
+                # if pad > 0:
+                #     rescorer_sampled_probs[..., pad:2*pad] = 1 - (1 - torch.min(rescorer_sampled_probs[..., pad:2*pad],rescorer_sampled_probs[..., -pad:])) ** 2
+                #     rescorer_sampled_probs[..., -2*pad:-pad] = 1 - (1 - torch.min(rescorer_sampled_probs[..., -2*pad:-pad],rescorer_sampled_probs[..., :pad])) ** 2
 
                 sampled_probs = rescore_weights[[steps_left]] * rescorer_sampled_probs + (1 - rescore_weights[[steps_left]]) * sampled_probs
 
