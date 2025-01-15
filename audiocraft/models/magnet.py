@@ -66,7 +66,8 @@ class MAGNeT(BaseGenModel):
                               rescorer: LMModel = None,
                               rescore_weights: torch.Tensor | float = 0.7,
                               rescorer_temp: torch.Tensor | float = 1.0,
-                              loop_trick_perc: float = 0):
+                              loop_trick_perc: float = 0.0,
+                              k_loops: int = 1):
         """Set the generation parameters for MAGNeT.
 
         Args:
@@ -81,6 +82,7 @@ class MAGNeT(BaseGenModel):
             span_arrangement (str, optional): Use either non-overlapping spans ('nonoverlap')
                                               or overlapping spans ('stride1') in the masking scheme.
         """
+        self.k_loops = k_loops
         self.generation_params = {
             'use_sampling': use_sampling,
             'temp': temperature,
@@ -106,4 +108,6 @@ class MAGNeT(BaseGenModel):
             gen_audio = self.compression_model.decode(gen_tokens, None)
             if pad > 0:
                 gen_audio = gen_audio[..., 640 * pad: -640*pad]
+
+            gen_audio = torch.cat([gen_audio] * self.k_loops, -1)
         return gen_audio

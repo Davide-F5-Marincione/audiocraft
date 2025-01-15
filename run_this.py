@@ -7,10 +7,11 @@ from audiocraft.models import MusicGen, MAGNeT
 from audiocraft.data.audio import audio_write
 import tqdm
 
-seed = 7
+seed = 67
 sec30 = False
-loop_trick_perc = 1.0
-loops = [True]
+loop_trick_perc = .2
+loops = [False, True]
+k_loops = 1
 
 descrs = [
     [
@@ -73,7 +74,8 @@ for descriptions in tqdm.tqdm(descrs):
                 decoding_steps = [first_dec, second_dec, 10, 10],
                 rescorer = rescorer,
                 rescore_weights = 0.7,
-                loop_trick_perc = loop_trick_perc
+                loop_trick_perc = loop_trick_perc,
+                k_loops = k_loops
             )
         else:
             model.set_generation_params(
@@ -87,7 +89,8 @@ for descriptions in tqdm.tqdm(descrs):
                 decoding_steps = [first_dec, second_dec, 10, 10],
                 rescorer = rescorer,
                 rescore_weights = 0.7,
-                loop_trick_perc = 0
+                loop_trick_perc = 0,
+                k_loops = k_loops
             )
 
         # gc.collect()
@@ -102,7 +105,7 @@ for descriptions in tqdm.tqdm(descrs):
         torch.cuda.empty_cache()
 
         for i, (desc, one_wav) in enumerate(zip(descriptions, wav)):
-            name = f"{seed}"
+            name = f"samples/{seed}"
             name += "_loop" if loop_setup else ""
             name += f"_{desc}"
 
