@@ -432,6 +432,7 @@ class LMModel(StreamingModule):
                  two_step_cfg: tp.Optional[bool] = None,
                  remove_prompts: bool = False,
                  check: bool = False,
+                 block_at: int = None,
                  callback: tp.Optional[tp.Callable[[int, int], None]] = None,
                  ) -> torch.Tensor:
         """Generate tokens sampling from the model given a prompt or unconditionally. Generation can
@@ -537,7 +538,8 @@ class LMModel(StreamingModule):
             unconditional_state = self.get_streaming_state()
             prev_offset = 0
             gen_sequence_len = gen_sequence.shape[-1]  # gen_sequence shape is [B, K, S]
-            for offset in range(start_offset_sequence, gen_sequence_len):
+            block_at = gen_sequence_len if block_at is None else block_at
+            for offset in range(start_offset_sequence, block_at):
                 # get current sequence (note that the streaming API is providing the caching over previous offsets)
                 curr_sequence = gen_sequence[..., prev_offset:offset]
                 curr_mask = mask[None, ..., prev_offset:offset].expand(B, -1, -1)
@@ -584,4 +586,4 @@ class LMModel(StreamingModule):
 
         # ensure the returned codes are all valid
         assert (out_codes >= 0).all() and (out_codes <= self.card).all()
-        return out_codes
+        return out_codes[..., :block_at]

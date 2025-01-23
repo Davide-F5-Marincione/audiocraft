@@ -97,7 +97,8 @@ class MusicGen(BaseGenModel):
                               top_p: float = 0.0, temperature: float = 1.0,
                               duration: float = 30.0, cfg_coef: float = 3.0,
                               cfg_coef_beta: tp.Optional[float] = None,
-                              two_step_cfg: bool = False, extend_stride: float = 18,):
+                              two_step_cfg: bool = False, extend_stride: float = 18,
+                              block_at: int = None):
         """Set the generation parameters for MusicGen.
 
         Args:

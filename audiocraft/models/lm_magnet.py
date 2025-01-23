@@ -237,11 +237,18 @@ class MagnetLMModel(LMModel):
         shape = (B, K, max_gen_len)
 
         gen_codes = torch.full(shape, mask_id, dtype=torch.long, device=device)
+
+        # From DAVIDE
         # filling the gen_codes with the prompt if needed
-        gen_codes[..., :start_offset] = prompt
+        pad = 0
+        if loop_trick_perc > 0:
+            pad = int((max_gen_len // 4) * loop_trick_perc)
+
+        gen_codes[..., pad:pad+start_offset] = prompt
         # create the gen_sequence with proper interleaving from the pattern: [B, K, S]
         gen_sequence = gen_codes
 
+        # From DAVIDE
         rescorer_conditions = None
         if rescorer is not None:
             assert rescorer.special_token_id == mask_id, "Rescorer and generator should have the same mask id."
@@ -258,8 +265,8 @@ class MagnetLMModel(LMModel):
                                                            cfg_conditions,
                                                            stage=stage,
                                                            device=device,
-                                                        #    prompt_length=prompt_length,
-                                                        #    prompt=prompt,
+                                                           prompt_length=prompt_length,
+                                                           prompt=prompt,
                                                            temp=temp,
                                                            max_cfg_coef=max_cfg_coef,
                                                            min_cfg_coef=min_cfg_coef,
@@ -288,8 +295,8 @@ class MagnetLMModel(LMModel):
                         condition_tensors: tp.Optional[ConditionTensors],
                         stage: int,
                         device: torch.device,
-                        # prompt_length: int = 0,
-                        # prompt: tp.Optional[torch.Tensor] = None,
+                        prompt_length: int = 0,
+                        prompt: tp.Optional[torch.Tensor] = None,
                         use_sampling: bool = True,
                         temp: float = 3.0,
                         max_cfg_coef: float = 10.0,
@@ -376,12 +383,18 @@ class MagnetLMModel(LMModel):
         if isinstance(rescorer_temp, float):
             rescorer_temp = torch.ones(timesteps, device=device) * rescorer_temp
         
+        # From DAVIDE
         pad = 0
         if loop_trick_perc > 0:
             pad = int((scores.shape[-1] // 4) * loop_trick_perc)
             scores[..., :pad] = DONT_REMASK_ME_SCORE
             scores[..., -pad:] = DONT_REMASK_ME_SCORE
-            gen_T = T - 2*pad
+            gen_T -= 2*pad
+
+        # From DAVIDE
+        if prompt_length > 0:
+            scores[..., pad:pad+prompt_length] = DONT_REMASK_ME_SCORE
+            gen_T -= prompt_length
 
         # run MAGNeT iterative decoding for "timesteps" iterations
         for timestep, steps_left in zip(torch.linspace(0, 1, timesteps, device=device), reversed(range(timesteps))):
@@ -412,6 +425,7 @@ class MagnetLMModel(LMModel):
                 else:
                     stage_gen_seq = stage_gen_seq.scatter(2, masked, mask_id)
 
+            # From DAVIDE
             if pad > 0:
                 stage_gen_seq[..., :pad] = stage_gen_seq[..., -2*pad:-pad]
                 stage_gen_seq[..., -pad:] = stage_gen_seq[..., pad:2*pad]
@@ -455,7 +469,7 @@ class MagnetLMModel(LMModel):
             # get probs of sampled tokens
             sampled_probs = torch.gather(probs, 3, sampled_tokens)[..., 0]
 
-            # TODO: add rescorer
+            # From DAVIDE
             if rescorer:
                 rescorer_logits = rescorer.compute_predictions(gen_sequence, conditions=None, condition_tensors=rescorer_conditions).logits[:, [stage]]
 

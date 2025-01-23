@@ -102,10 +102,14 @@ class MAGNeT(BaseGenModel):
         """Generate Audio from tokens."""
         assert gen_tokens.dim() == 3
         with torch.no_grad():
+            # From DAVIDE
             pad = 0
             if self.generation_params['loop_trick_perc'] > 0:
                 pad = int((gen_tokens.shape[-1] // 4) * self.generation_params['loop_trick_perc'])
+            
             gen_audio = self.compression_model.decode(gen_tokens, None)
+
+            # From DAVIDE
             if pad > 0:
                 gen_audio = gen_audio[..., 640 * pad: -640*pad]
 

@@ -10,7 +10,7 @@ import tqdm
 seed = 67
 sec30 = False
 loop_trick_perc = .2
-loops = [False, True]
+loops = [True]
 k_loops = 1
 
 descrs = [
@@ -48,7 +48,7 @@ descrs = [
 
 assert torch.cuda.is_available(), "Man, you NEED a GPU for this"
 device = "cuda"
-rescorer = MusicGen.get_pretrained('facebook/musicgen-medium', device=device).lm
+rescorer = MusicGen.get_pretrained('facebook/musicgen-medium', device=device)
 if sec30:
     model = MAGNeT.get_pretrained('facebook/magnet-medium-30secs', device=device)
 else:
@@ -62,6 +62,11 @@ for descriptions in tqdm.tqdm(descrs):
         first_dec = 20 * (3 if sec30 else 1)
         second_dec = 10 * (2 if sec30 else 1)
 
+        rescorer.set_generation_params(
+            block_at = 100,
+            duration = 5.0 * (3 if sec30 else 1)
+        )
+
         if loop_setup:
             model.set_generation_params(
                 span_arrangement = 'stride1',
@@ -72,7 +77,7 @@ for descriptions in tqdm.tqdm(descrs):
                 max_cfg_coef = 10.0,
                 min_cfg_coef = 1.0,
                 decoding_steps = [first_dec, second_dec, 10, 10],
-                rescorer = rescorer,
+                rescorer = rescorer.lm,
                 rescore_weights = 0.7,
                 loop_trick_perc = loop_trick_perc,
                 k_loops = k_loops
@@ -87,7 +92,7 @@ for descriptions in tqdm.tqdm(descrs):
                 max_cfg_coef = 10.0,
                 min_cfg_coef = 1.0,
                 decoding_steps = [first_dec, second_dec, 10, 10],
-                rescorer = rescorer,
+                rescorer = rescorer.lm,
                 rescore_weights = 0.7,
                 loop_trick_perc = 0,
                 k_loops = k_loops
@@ -96,7 +101,9 @@ for descriptions in tqdm.tqdm(descrs):
         # gc.collect()
 
         with torch.autocast(device_type=device, dtype=torch.float16):
-            wav = model.generate(descriptions)
+            prompt = rescorer.generate(descriptions)
+            wav = model.generate_continuation(descriptions=descriptions, prompt=prompt, prompt_sample_rate=rescorer.sample_rate)
+            # wav = model.generate(descriptions=descriptions)
 
         sr = model.sample_rate
         # del model
