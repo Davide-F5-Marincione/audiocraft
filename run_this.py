@@ -16,7 +16,7 @@ rescore_weights = 0.0
 prompt_original_length = 5.0
 prompt_input_length = 2.0
 use_rescorer = False
-decoding_steps_per_tens = [130, 60, 25, 25]
+decoding_steps = [100, 50, 10, 10]
 
 descrs = [
     [
@@ -77,7 +77,7 @@ for descriptions in tqdm.tqdm(descrs):
                 temperature = 3.0,
                 max_cfg_coef = 10.0,
                 min_cfg_coef = 1.0,
-                decoding_steps_per_tens = decoding_steps_per_tens,
+                decoding_steps = decoding_steps,
                 rescorer = rescorer.lm if use_rescorer else None,
                 rescore_weights = rescore_weights,
                 loop_size_perc = loop_size_perc,
@@ -92,7 +92,7 @@ for descriptions in tqdm.tqdm(descrs):
                 temperature = 3.0,
                 max_cfg_coef = 10.0,
                 min_cfg_coef = 1.0,
-                decoding_steps_per_tens = [130, 60, 25, 25],
+                decoding_steps = decoding_steps,
                 rescorer = rescorer.lm if use_rescorer else None,
                 rescore_weights = rescore_weights,
                 loop_size_perc = 0,

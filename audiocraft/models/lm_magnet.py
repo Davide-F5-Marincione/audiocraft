@@ -162,7 +162,7 @@ class MagnetLMModel(LMModel):
                          callback: tp.Optional[tp.Callable[[int, int], None]] = None,
                          max_cfg_coef: float = 10.0,
                          min_cfg_coef: float = 1.0,
-                         decoding_steps_per_tens: tp.List[int] = [20, 10, 10, 10],
+                         decoding_steps: tp.List[int] = [20, 10, 10, 10],
                          anneal_temp: bool = True,
                          span_scoring='max',
                          span_arrangement='nonoverlap',
@@ -262,11 +262,9 @@ class MagnetLMModel(LMModel):
             # encode conditions and fuse, both have a streaming cache to not recompute when generating.
             rescorer_conditions = rescorer.condition_provider(rescorer_conditions)
 
-        steps = [int(s / 500 * (valid_amount - start_offset)) + 1 for s in decoding_steps_per_tens]
-
         curr_step = 0
-        pbar = tqdm.tqdm(total=sum(steps), desc="Generating", leave=False)
-        for stage, n_steps in zip(range(self.n_q), steps):
+        pbar = tqdm.tqdm(total=sum(decoding_steps), desc="Generating", leave=False)
+        for stage, n_steps in zip(range(self.n_q), decoding_steps):
             gen_sequence, curr_step = self._generate_stage(gen_sequence,
                                                            cfg_conditions,
                                                            stage=stage,
@@ -284,7 +282,7 @@ class MagnetLMModel(LMModel):
                                                            use_sampling=use_sampling,
                                                            span_arrangement=span_arrangement,
                                                            curr_step=curr_step,
-                                                           total_steps=sum(steps),
+                                                           total_steps=sum(decoding_steps),
                                                            callback=callback,
                                                            rescorer=rescorer,
                                                            rescore_weights=rescore_weights,
