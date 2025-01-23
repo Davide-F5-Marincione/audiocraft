@@ -162,14 +162,14 @@ class MagnetLMModel(LMModel):
                          callback: tp.Optional[tp.Callable[[int, int], None]] = None,
                          max_cfg_coef: float = 10.0,
                          min_cfg_coef: float = 1.0,
-                         decoding_steps: tp.List[int] = [20, 10, 10, 10],
+                         decoding_steps_per_tens: tp.List[int] = [20, 10, 10, 10],
                          anneal_temp: bool = True,
                          span_scoring='max',
                          span_arrangement='nonoverlap',
                          rescorer: LMModel = None,
                          rescore_weights: torch.Tensor | float = 0.7,
                          rescorer_temp: torch.Tensor | float = 1.0,
-                         loop_trick_perc: float = 0
+                         loop_size_perc: float = 0
                          ) -> torch.Tensor:
         """Generate audio tokens given textual conditions, and optionally given audio prompts,
         by running MAGNeT's iterative decoding algorithm for each of the n_q RVQ levels.
@@ -240,11 +240,15 @@ class MagnetLMModel(LMModel):
 
         # From DAVIDE
         # filling the gen_codes with the prompt if needed
-        pad = 0
-        if loop_trick_perc > 0:
-            pad = int((max_gen_len // 4) * loop_trick_perc)
+        left_pad = 0
+        right_pad = 0
+        if loop_size_perc > 0:
+            valid_amount = int(max_gen_len * loop_size_perc)
+            empty_amount = max_gen_len - valid_amount
+            left_pad = min(valid_amount, empty_amount // 2)
+            right_pad = empty_amount - left_pad
 
-        gen_codes[..., pad:pad+start_offset] = prompt
+        gen_codes[..., left_pad:left_pad+start_offset] = prompt
         # create the gen_sequence with proper interleaving from the pattern: [B, K, S]
         gen_sequence = gen_codes
 
@@ -258,9 +262,11 @@ class MagnetLMModel(LMModel):
             # encode conditions and fuse, both have a streaming cache to not recompute when generating.
             rescorer_conditions = rescorer.condition_provider(rescorer_conditions)
 
+        steps = [int(s / 500 * (valid_amount - start_offset)) + 1 for s in decoding_steps_per_tens]
+
         curr_step = 0
-        pbar = tqdm.tqdm(total=sum(decoding_steps), desc="Generating", leave=False)
-        for stage, n_steps in zip(range(self.n_q), decoding_steps):
+        pbar = tqdm.tqdm(total=sum(steps), desc="Generating", leave=False)
+        for stage, n_steps in zip(range(self.n_q), steps):
             gen_sequence, curr_step = self._generate_stage(gen_sequence,
                                                            cfg_conditions,
                                                            stage=stage,
@@ -278,13 +284,13 @@ class MagnetLMModel(LMModel):
                                                            use_sampling=use_sampling,
                                                            span_arrangement=span_arrangement,
                                                            curr_step=curr_step,
-                                                           total_steps=sum(decoding_steps),
+                                                           total_steps=sum(steps),
                                                            callback=callback,
                                                            rescorer=rescorer,
                                                            rescore_weights=rescore_weights,
                                                            rescorer_temp=rescorer_temp,
                                                            rescorer_conditions=rescorer_conditions,
-                                                           loop_trick_perc=loop_trick_perc,
+                                                           loop_size_perc=loop_size_perc,
                                                            pbar=pbar)
 
         return gen_sequence
@@ -314,7 +320,7 @@ class MagnetLMModel(LMModel):
                         rescore_weights: torch.Tensor | float = 0.7,
                         rescorer_temp: torch.Tensor | float = 1.0,
                         rescorer_conditions = tp.Optional[ConditionTensors],
-                        loop_trick_perc: float = 0,
+                        loop_size_perc: float = 0,
                         pbar: tqdm.tqdm = None) -> tp.Tuple[torch.Tensor, int]:
         """Generate audio tokens of a single RVQ level (stage), given the previously generated stages,
            and the textual conditions.
@@ -376,25 +382,30 @@ class MagnetLMModel(LMModel):
             # scores[..., :prompt_length] = DONT_REMASK_ME_SCORE
             # gen_T = T - prompt_length
             gen_T = T
+        
+        # From DAVIDE
+        left_pad = 0
+        right_pad = 0
+        if loop_size_perc > 0:
+            valid_amount = int(scores.shape[-1] * loop_size_perc)
+            empty_amount = scores.shape[-1] - valid_amount
+            left_pad = min(valid_amount, empty_amount // 2)
+            right_pad = empty_amount - left_pad
+            scores[..., :left_pad] = DONT_REMASK_ME_SCORE
+            scores[..., -right_pad:] = DONT_REMASK_ME_SCORE
+            gen_T -= empty_amount
+
+        # From DAVIDE
+        if prompt_length > 0:
+            scores[..., left_pad:left_pad+prompt_length] = DONT_REMASK_ME_SCORE
+            stage_gen_seq[..., left_pad:left_pad+prompt_length] = prompt[:, [stage]]
+            gen_T -= prompt_length
 
         if isinstance(rescore_weights, float):
             rescore_weights = torch.ones(timesteps, device=device) * rescore_weights
         
         if isinstance(rescorer_temp, float):
             rescorer_temp = torch.ones(timesteps, device=device) * rescorer_temp
-        
-        # From DAVIDE
-        pad = 0
-        if loop_trick_perc > 0:
-            pad = int((scores.shape[-1] // 4) * loop_trick_perc)
-            scores[..., :pad] = DONT_REMASK_ME_SCORE
-            scores[..., -pad:] = DONT_REMASK_ME_SCORE
-            gen_T -= 2*pad
-
-        # From DAVIDE
-        if prompt_length > 0:
-            scores[..., pad:pad+prompt_length] = DONT_REMASK_ME_SCORE
-            gen_T -= prompt_length
 
         # run MAGNeT iterative decoding for "timesteps" iterations
         for timestep, steps_left in zip(torch.linspace(0, 1, timesteps, device=device), reversed(range(timesteps))):
@@ -426,9 +437,9 @@ class MagnetLMModel(LMModel):
                     stage_gen_seq = stage_gen_seq.scatter(2, masked, mask_id)
 
             # From DAVIDE
-            if pad > 0:
-                stage_gen_seq[..., :pad] = stage_gen_seq[..., -2*pad:-pad]
-                stage_gen_seq[..., -pad:] = stage_gen_seq[..., pad:2*pad]
+            if right_pad > 0:
+                stage_gen_seq[..., :left_pad] = stage_gen_seq[..., -left_pad-right_pad:-right_pad]
+                stage_gen_seq[..., -right_pad:] = torch.cat([stage_gen_seq[..., left_pad:-right_pad]] * (right_pad // valid_amount + 1), -1)[..., :right_pad]
 
             gen_sequence[:, [stage], :] = stage_gen_seq
             if condition_tensors:

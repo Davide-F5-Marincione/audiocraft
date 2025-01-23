@@ -61,12 +61,12 @@ class MAGNeT(BaseGenModel):
     def set_generation_params(self, use_sampling: bool = True, top_k: int = 0,
                               top_p: float = 0.9, temperature: float = 3.0,
                               max_cfg_coef: float = 10.0, min_cfg_coef: float = 1.0,
-                              decoding_steps: tp.List[int] = [20, 10, 10, 10],
+                              decoding_steps_per_tens: tp.List[int] = [20, 10, 10, 10],
                               span_arrangement: str = 'nonoverlap',
                               rescorer: LMModel = None,
                               rescore_weights: torch.Tensor | float = 0.7,
                               rescorer_temp: torch.Tensor | float = 1.0,
-                              loop_trick_perc: float = 0.0,
+                              loop_size_perc: float = 0.0,
                               k_loops: int = 1):
         """Set the generation parameters for MAGNeT.
 
@@ -82,6 +82,9 @@ class MAGNeT(BaseGenModel):
             span_arrangement (str, optional): Use either non-overlapping spans ('nonoverlap')
                                               or overlapping spans ('stride1') in the masking scheme.
         """
+        if isinstance(rescore_weights, int):
+          rescore_weights = float(rescore_weights)
+
         self.k_loops = k_loops
         self.generation_params = {
             'use_sampling': use_sampling,
@@ -90,12 +93,12 @@ class MAGNeT(BaseGenModel):
             'top_p': top_p,
             'max_cfg_coef': max_cfg_coef,
             'min_cfg_coef': min_cfg_coef,
-            'decoding_steps': [int(s) for s in decoding_steps],
+            'decoding_steps_per_tens': [int(s) for s in decoding_steps_per_tens],
             'span_arrangement': span_arrangement,
             'rescorer': rescorer,
             'rescore_weights': rescore_weights,
             'rescorer_temp': rescorer_temp,
-            'loop_trick_perc': loop_trick_perc
+            'loop_size_perc': loop_size_perc
         }
 
     def generate_audio(self, gen_tokens: torch.Tensor) -> torch.Tensor:
@@ -103,15 +106,19 @@ class MAGNeT(BaseGenModel):
         assert gen_tokens.dim() == 3
         with torch.no_grad():
             # From DAVIDE
-            pad = 0
-            if self.generation_params['loop_trick_perc'] > 0:
-                pad = int((gen_tokens.shape[-1] // 4) * self.generation_params['loop_trick_perc'])
+            left_pad = 0
+            right_pad = 0
+            if self.generation_params['loop_size_perc'] > 0:
+                valid_amount = int(gen_tokens.shape[-1] * self.generation_params['loop_size_perc'])
+                empty_amount = gen_tokens.shape[-1]  - valid_amount
+                left_pad = min(valid_amount, empty_amount // 2)
+                right_pad = empty_amount - left_pad
             
             gen_audio = self.compression_model.decode(gen_tokens, None)
 
             # From DAVIDE
-            if pad > 0:
-                gen_audio = gen_audio[..., 640 * pad: -640*pad]
+            if right_pad > 0:
+                gen_audio = gen_audio[..., 640 * left_pad: -640*right_pad]
 
             gen_audio = torch.cat([gen_audio] * self.k_loops, -1)
         return gen_audio
