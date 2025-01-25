@@ -242,7 +242,7 @@ class MagnetLMModel(LMModel):
         # filling the gen_codes with the prompt if needed
         left_pad = 0
         right_pad = 0
-        if loop_size_perc > 0:
+        if loop_size_perc < 1.0:
             valid_amount = int(max_gen_len * loop_size_perc)
             empty_amount = max_gen_len - valid_amount
             left_pad = min(valid_amount, empty_amount // 2)
@@ -384,7 +384,7 @@ class MagnetLMModel(LMModel):
         # From DAVIDE
         left_pad = 0
         right_pad = 0
-        if loop_size_perc > 0:
+        if loop_size_perc < 1.0:
             valid_amount = int(scores.shape[-1] * loop_size_perc)
             empty_amount = scores.shape[-1] - valid_amount
             left_pad = min(valid_amount, empty_amount // 2)

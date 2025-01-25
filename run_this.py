@@ -7,123 +7,440 @@ from audiocraft.models import MusicGen, MAGNeT
 from audiocraft.data.audio import audio_write
 import tqdm
 
-seed = 67
-sec30 = False
-loop_size_perc = .9
-loops = [True]
-k_loops = 2
-rescore_weights = 0.0
-prompt_original_length = 5.0
-prompt_input_length = 2.0
-use_rescorer = False
+seed = 42
 decoding_steps = [100, 50, 10, 10]
-
-descrs = [
-    [
-        "Genre Fusion, Jazz meets electronic dance music with a smooth saxophone lead",
-        "Epic Trailer A cinematic score with powerful strings and booming percussion",
-        "Funky Groove, A lively funk-inspired track with slap bass and vibrant horns",
-        "Lullaby, A gentle and soothing melody with soft piano and harp"
-    ]#,[
-    #     "Retro Video Game, An 8-bit chiptune with a fast-paced and playful vibe",
-    #     "Tropical Beach, A relaxing track with steel drums and marimba",
-    #     "Dark Synthwave, A moody track with deep synth basslines and a cyberpunk edge",
-    #     "Upbeat Pop, A catchy pop tune with vibrant synths and claps"
-    # ],[
-    #     "Medieval Fantasy A mystical track with lute, flute, and light percussion",
-    #     "Ambient Chill, A serene, atmospheric piece with soft piano and pads",
-    #     "Space Adventure, A futuristic track with ethereal synths and pulsating rhythms",
-    #     "Energetic Hip-Hop, A beat featuring punchy drums and a dynamic melody"
-    # ],[
-    #     "Romantic Waltz, A flowing piano melody and warm strings, evoking charm",
-    #     "High-Energy Rock, A guitar-driven anthem with powerful riffs",
-    #     "Urban Groove, A jazzy lo-fi track with a steady beat and warm keys",
-    #     "Holiday Cheer, A festive tune with sleigh bells and chimes"
-    # ],[
-    #     "Mystery and Suspense, A tense track with staccato strings and eerie effects",
-    #     "Wild West, A cowboy-inspired track with twangy guitars and a galloping rhythm",
-    #     "Spiritual Meditation, A calming track with Tibetan singing bowls and drones",
-    #     "Fast-Paced Techno, A high-energy electronic track with hypnotic synth loops"
-    # ],
-    # [
-    #     "Island Dance Party, A vibrant Caribbean soca-inspired track with rhythmic steel drums, upbeat maracas, and a groovy bassline",
-    #     "Reggae Chillout, A laid-back reggae groove with a syncopated guitar skank, deep bass, and soft congas for a beachside vibe"
-    # ]
-]
 
 assert torch.cuda.is_available(), "Man, you NEED a GPU for this"
 device = "cuda"
-rescorer = MusicGen.get_pretrained('facebook/musicgen-medium', device=device)
-if sec30:
-    model = MAGNeT.get_pretrained('facebook/magnet-medium-30secs', device=device)
-else:
-    model = MAGNeT.get_pretrained('facebook/magnet-medium-10secs', device=device)
+musicgen = MusicGen.get_pretrained('facebook/musicgen-medium', device=device)
+magnet = MAGNeT.get_pretrained('facebook/magnet-medium-10secs', device=device)
+
+descrs = [
+    [
+    ("jazzfusion","Genre Fusion, Jazz meets electronic dance music with a smooth saxophone lead"),
+    ('epictrailer', "Epic Trailer A cinematic score with powerful strings and booming percussion"),
+    ('funkygroove', "Funky Groove, A lively funk-inspired track with slap bass and vibrant horns"),
+    ('lullaby', "Lullaby, A gentle and soothing melody with soft piano and harp")
+    ], [
+    ('retrogame', "Retro Video Game, An 8-bit chiptune with a fast-paced and playful vibe"),
+    ('tropical', "Tropical Beach, A relaxing track with steel drums and marimba"),
+    ('upbeatpop', "Upbeat Pop, A catchy pop tune with vibrant synths and claps"),
+    ('medieval', "Medieval Fantasy A mystical track with lute, flute, and light percussion")
+    ], [
+    ('energetic', "Energetic Hip-Hop, A beat featuring punchy drums and a dynamic melody"),
+    ('wildwest', "Wild West, A cowboy-inspired track with twangy guitars and a galloping rhythm"),
+    ('waltz', "Romantic Waltz, A flowing piano melody and warm strings, evoking charm"),
+    ('islandpary', "Island Dance Party, A vibrant Caribbean soca-inspired track with rhythmic steel drums, upbeat maracas, and a groovy bassline")
+    ]
+]
+
+setups = [
+    # ('magnet', -1,
+    # {
+    #     'span_arrangement' : 'stride1',
+    #     'use_sampling' : True,
+    #     'top_k' : 0,
+    #     'top_p' : .9,
+    #     'temperature' : 3.0,
+    #     'max_cfg_coef' : 10.0,
+    #     'min_cfg_coef' : 1.0,
+    #     'decoding_steps' : decoding_steps,
+    #     'rescorer' : None,
+    #     'rescore_weights' : 0.0,
+    #     'loop_size_perc' : 1.0,
+    #     'k_loops' : 2
+    # }),
+    # ('hybrid_2s', 2.0,
+    # {
+    #     'span_arrangement' : 'stride1',
+    #     'use_sampling' : True,
+    #     'top_k' : 0,
+    #     'top_p' : .9,
+    #     'temperature' : 3.0,
+    #     'max_cfg_coef' : 10.0,
+    #     'min_cfg_coef' : 1.0,
+    #     'decoding_steps' : decoding_steps,
+    #     'rescorer' : None,
+    #     'rescore_weights' : 0.0,
+    #     'loop_size_perc' : 1.0,
+    #     'k_loops' : 2
+    # }),
+    # ('hybrid_5s', 5.0,
+    # {
+    #     'span_arrangement' : 'stride1',
+    #     'use_sampling' : True,
+    #     'top_k' : 0,
+    #     'top_p' : .9,
+    #     'temperature' : 3.0,
+    #     'max_cfg_coef' : 10.0,
+    #     'min_cfg_coef' : 1.0,
+    #     'decoding_steps' : decoding_steps,
+    #     'rescorer' : None,
+    #     'rescore_weights' : 0.0,
+    #     'loop_size_perc' : 1.0,
+    #     'k_loops' : 2
+    # }),
+    # ('magnet_circular', -1,
+    # {
+    #     'span_arrangement' : 'stride1',
+    #     'use_sampling' : True,
+    #     'top_k' : 0,
+    #     'top_p' : .9,
+    #     'temperature' : 3.0,
+    #     'max_cfg_coef' : 10.0,
+    #     'min_cfg_coef' : 1.0,
+    #     'decoding_steps' : decoding_steps,
+    #     'rescorer' : None,
+    #     'rescore_weights' : 0.0,
+    #     'loop_size_perc' : .8,
+    #     'k_loops' : 2
+    # }),
+    # ('hybrid_2s_circular', 2.0,
+    # {
+    #     'span_arrangement' : 'stride1',
+    #     'use_sampling' : True,
+    #     'top_k' : 0,
+    #     'top_p' : .9,
+    #     'temperature' : 3.0,
+    #     'max_cfg_coef' : 10.0,
+    #     'min_cfg_coef' : 1.0,
+    #     'decoding_steps' : decoding_steps,
+    #     'rescorer' : None,
+    #     'rescore_weights' : 0.0,
+    #     'loop_size_perc' : .8,
+    #     'k_loops' : 2
+    # }),
+    # ('hybrid_5s_circular', 5.0,
+    # {
+    #     'span_arrangement' : 'stride1',
+    #     'use_sampling' : True,
+    #     'top_k' : 0,
+    #     'top_p' : .9,
+    #     'temperature' : 3.0,
+    #     'max_cfg_coef' : 10.0,
+    #     'min_cfg_coef' : 1.0,
+    #     'decoding_steps' : decoding_steps,
+    #     'rescorer' : None,
+    #     'rescore_weights' : 0.0,
+    #     'loop_size_perc' : .8,
+    #     'k_loops' : 2
+    # }),
+    # ('magnet_rescored_04', -1,
+    # {
+    #     'span_arrangement' : 'stride1',
+    #     'use_sampling' : True,
+    #     'top_k' : 0,
+    #     'top_p' : .9,
+    #     'temperature' : 3.0,
+    #     'max_cfg_coef' : 10.0,
+    #     'min_cfg_coef' : 1.0,
+    #     'decoding_steps' : decoding_steps,
+    #     'rescorer' : musicgen.lm,
+    #     'rescore_weights' : 0.4,
+    #     'loop_size_perc' : 1.0,
+    #     'k_loops' : 2
+    # }),
+    ('hybrid_2s_rescored_04', 2.0,
+    {
+        'span_arrangement' : 'stride1',
+        'use_sampling' : True,
+        'top_k' : 0,
+        'top_p' : .9,
+        'temperature' : 3.0,
+        'max_cfg_coef' : 10.0,
+        'min_cfg_coef' : 1.0,
+        'decoding_steps' : decoding_steps,
+        'rescorer' : musicgen.lm,
+        'rescore_weights' : 0.4,
+        'loop_size_perc' : 1.0,
+        'k_loops' : 2
+    }),
+    # ('hybrid_5s_rescored_04', 5.0,
+    # {
+    #     'span_arrangement' : 'stride1',
+    #     'use_sampling' : True,
+    #     'top_k' : 0,
+    #     'top_p' : .9,
+    #     'temperature' : 3.0,
+    #     'max_cfg_coef' : 10.0,
+    #     'min_cfg_coef' : 1.0,
+    #     'decoding_steps' : decoding_steps,
+    #     'rescorer' : musicgen.lm,
+    #     'rescore_weights' : 0.4,
+    #     'loop_size_perc' : 1.0,
+    #     'k_loops' : 2
+    # }),
+    # ('magnet_circular_rescored_04', -1,
+    # {
+    #     'span_arrangement' : 'stride1',
+    #     'use_sampling' : True,
+    #     'top_k' : 0,
+    #     'top_p' : .9,
+    #     'temperature' : 3.0,
+    #     'max_cfg_coef' : 10.0,
+    #     'min_cfg_coef' : 1.0,
+    #     'decoding_steps' : decoding_steps,
+    #     'rescorer' : musicgen.lm,
+    #     'rescore_weights' : 0.4,
+    #     'loop_size_perc' : .8,
+    #     'k_loops' : 2
+    # }),
+    # ('hybrid_2s_circular_rescored_04', 2.0,
+    # {
+    #     'span_arrangement' : 'stride1',
+    #     'use_sampling' : True,
+    #     'top_k' : 0,
+    #     'top_p' : .9,
+    #     'temperature' : 3.0,
+    #     'max_cfg_coef' : 10.0,
+    #     'min_cfg_coef' : 1.0,
+    #     'decoding_steps' : decoding_steps,
+    #     'rescorer' : musicgen.lm,
+    #     'rescore_weights' : 0.4,
+    #     'loop_size_perc' : .8,
+    #     'k_loops' : 2
+    # }),
+    # ('hybrid_5s_circular_rescored_04', 5.0,
+    # {
+    #     'span_arrangement' : 'stride1',
+    #     'use_sampling' : True,
+    #     'top_k' : 0,
+    #     'top_p' : .9,
+    #     'temperature' : 3.0,
+    #     'max_cfg_coef' : 10.0,
+    #     'min_cfg_coef' : 1.0,
+    #     'decoding_steps' : decoding_steps,
+    #     'rescorer' : musicgen.lm,
+    #     'rescore_weights' : 0.4,
+    #     'loop_size_perc' : .8,
+    #     'k_loops' : 2
+    # }),
+    # ('magnet_rescored_08', -1,
+    # {
+    #     'span_arrangement' : 'stride1',
+    #     'use_sampling' : True,
+    #     'top_k' : 0,
+    #     'top_p' : .9,
+    #     'temperature' : 3.0,
+    #     'max_cfg_coef' : 10.0,
+    #     'min_cfg_coef' : 1.0,
+    #     'decoding_steps' : decoding_steps,
+    #     'rescorer' : musicgen.lm,
+    #     'rescore_weights' : 0.8,
+    #     'loop_size_perc' : 1.0,
+    #     'k_loops' : 2
+    # }),
+    ('hybrid_2s_rescored_08', 2.0,
+    {
+        'span_arrangement' : 'stride1',
+        'use_sampling' : True,
+        'top_k' : 0,
+        'top_p' : .9,
+        'temperature' : 3.0,
+        'max_cfg_coef' : 10.0,
+        'min_cfg_coef' : 1.0,
+        'decoding_steps' : decoding_steps,
+        'rescorer' : musicgen.lm,
+        'rescore_weights' : 0.8,
+        'loop_size_perc' : 1.0,
+        'k_loops' : 2
+    }),
+    ('hybrid_5s_rescored_08', 5.0,
+    {
+        'span_arrangement' : 'stride1',
+        'use_sampling' : True,
+        'top_k' : 0,
+        'top_p' : .9,
+        'temperature' : 3.0,
+        'max_cfg_coef' : 10.0,
+        'min_cfg_coef' : 1.0,
+        'decoding_steps' : decoding_steps,
+        'rescorer' : musicgen.lm,
+        'rescore_weights' : 0.8,
+        'loop_size_perc' : 1.0,
+        'k_loops' : 2
+    }),
+    # ('magnet_circular_rescored_08', -1,
+    # {
+    #     'span_arrangement' : 'stride1',
+    #     'use_sampling' : True,
+    #     'top_k' : 0,
+    #     'top_p' : .9,
+    #     'temperature' : 3.0,
+    #     'max_cfg_coef' : 10.0,
+    #     'min_cfg_coef' : 1.0,
+    #     'decoding_steps' : decoding_steps,
+    #     'rescorer' : musicgen.lm,
+    #     'rescore_weights' : 0.8,
+    #     'loop_size_perc' : 0.8,
+    #     'k_loops' : 2
+    # }),
+    # ('hybrid_2s_circular_rescored_08', 2.0,
+    # {
+    #     'span_arrangement' : 'stride1',
+    #     'use_sampling' : True,
+    #     'top_k' : 0,
+    #     'top_p' : .9,
+    #     'temperature' : 3.0,
+    #     'max_cfg_coef' : 10.0,
+    #     'min_cfg_coef' : 1.0,
+    #     'decoding_steps' : decoding_steps,
+    #     'rescorer' : musicgen.lm,
+    #     'rescore_weights' : 0.8,
+    #     'loop_size_perc' : .8,
+    #     'k_loops' : 2
+    # }),
+    # ('hybrid_5s_circular_rescored_08', 5.0,
+    # {
+    #     'span_arrangement' : 'stride1',
+    #     'use_sampling' : True,
+    #     'top_k' : 0,
+    #     'top_p' : .9,
+    #     'temperature' : 3.0,
+    #     'max_cfg_coef' : 10.0,
+    #     'min_cfg_coef' : 1.0,
+    #     'decoding_steps' : decoding_steps,
+    #     'rescorer' : musicgen.lm,
+    #     'rescore_weights' : 0.8,
+    #     'loop_size_perc' : .8,
+    #     'k_loops' : 2
+    # }),
+    # ('magnet_rescored_1', -1,
+    # {
+    #     'span_arrangement' : 'stride1',
+    #     'use_sampling' : True,
+    #     'top_k' : 0,
+    #     'top_p' : .9,
+    #     'temperature' : 3.0,
+    #     'max_cfg_coef' : 10.0,
+    #     'min_cfg_coef' : 1.0,
+    #     'decoding_steps' : decoding_steps,
+    #     'rescorer' : musicgen.lm,
+    #     'rescore_weights' : 1.0,
+    #     'loop_size_perc' : 1.0,
+    #     'k_loops' : 2
+    # }),
+    ('hybrid_2s_rescored_1', 2.0,
+    {
+        'span_arrangement' : 'stride1',
+        'use_sampling' : True,
+        'top_k' : 0,
+        'top_p' : .9,
+        'temperature' : 3.0,
+        'max_cfg_coef' : 10.0,
+        'min_cfg_coef' : 1.0,
+        'decoding_steps' : decoding_steps,
+        'rescorer' : musicgen.lm,
+        'rescore_weights' : 1.0,
+        'loop_size_perc' : 1.0,
+        'k_loops' : 2
+    }),
+    ('hybrid_5s_rescored_1', 5.0,
+    {
+        'span_arrangement' : 'stride1',
+        'use_sampling' : True,
+        'top_k' : 0,
+        'top_p' : .9,
+        'temperature' : 3.0,
+        'max_cfg_coef' : 10.0,
+        'min_cfg_coef' : 1.0,
+        'decoding_steps' : decoding_steps,
+        'rescorer' : musicgen.lm,
+        'rescore_weights' : 1.0,
+        'loop_size_perc' : 1.0,
+        'k_loops' : 2
+    }),
+    # ('magnet_circular_rescored_1', -1,
+    # {
+    #     'span_arrangement' : 'stride1',
+    #     'use_sampling' : True,
+    #     'top_k' : 0,
+    #     'top_p' : .9,
+    #     'temperature' : 3.0,
+    #     'max_cfg_coef' : 10.0,
+    #     'min_cfg_coef' : 1.0,
+    #     'decoding_steps' : decoding_steps,
+    #     'rescorer' : musicgen.lm,
+    #     'rescore_weights' : 1.0,
+    #     'loop_size_perc' : .8,
+    #     'k_loops' : 2
+    # }),
+    # ('hybrid_2s_circular_rescored_1', 2.0,
+    # {
+    #     'span_arrangement' : 'stride1',
+    #     'use_sampling' : True,
+    #     'top_k' : 0,
+    #     'top_p' : .9,
+    #     'temperature' : 3.0,
+    #     'max_cfg_coef' : 10.0,
+    #     'min_cfg_coef' : 1.0,
+    #     'decoding_steps' : decoding_steps,
+    #     'rescorer' : musicgen.lm,
+    #     'rescore_weights' : 1.0,
+    #     'loop_size_perc' : .8,
+    #     'k_loops' : 2
+    # }),
+    # ('hybrid_5s_circular_rescored_1', 5.0,
+    # {
+    #     'span_arrangement' : 'stride1',
+    #     'use_sampling' : True,
+    #     'top_k' : 0,
+    #     'top_p' : .9,
+    #     'temperature' : 3.0,
+    #     'max_cfg_coef' : 10.0,
+    #     'min_cfg_coef' : 1.0,
+    #     'decoding_steps' : decoding_steps,
+    #     'rescorer' : musicgen.lm,
+    #     'rescore_weights' : 1.0,
+    #     'loop_size_perc' : .8,
+    #     'k_loops' : 2
+    # })
+]
 
 for descriptions in tqdm.tqdm(descrs):
-    for loop_setup in loops:
+    folders, descriptions = zip(*descriptions)
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+
+    musicgen.set_generation_params(
+        duration = 10.0
+    )
+
+    prompt = []
+    for folder, d in zip(folders, descriptions):
+        name = f"samples/{folder}_{seed}/"
+        name += "musicgen-medium"
+        p = musicgen.generate([d])
+
+        prompt.append(p)
+
+        p = p[0].to(device="cpu", dtype=torch.float32)
+
+        audio_write(name, torch.cat([p, p], -1), musicgen.sample_rate, loudness_compressor=True, strategy="loudness", loudness_headroom_db=16)
+
+    prompt = torch.cat(prompt, 0).contiguous()
+    gc.collect()
+    torch.cuda.empty_cache()
+
+    for filename, promptlen, setup in setups:
         torch.manual_seed(seed)
         np.random.seed(seed)
 
-        rescorer.set_generation_params(
-            duration = prompt_original_length * (3 if sec30 else 1)
+        magnet.set_generation_params(
+            **setup
         )
 
-        if loop_setup:
-            model.set_generation_params(
-                span_arrangement = 'stride1',
-                use_sampling = True,
-                top_k=0,
-                top_p = .9,
-                temperature = 3.0,
-                max_cfg_coef = 10.0,
-                min_cfg_coef = 1.0,
-                decoding_steps = decoding_steps,
-                rescorer = rescorer.lm if use_rescorer else None,
-                rescore_weights = rescore_weights,
-                loop_size_perc = loop_size_perc,
-                k_loops = k_loops
-            )
-        else:
-            model.set_generation_params(
-                span_arrangement = 'stride1',
-                use_sampling = True,
-                top_k=0,
-                top_p = .9,
-                temperature = 3.0,
-                max_cfg_coef = 10.0,
-                min_cfg_coef = 1.0,
-                decoding_steps = decoding_steps,
-                rescorer = rescorer.lm if use_rescorer else None,
-                rescore_weights = rescore_weights,
-                loop_size_perc = 0,
-                k_loops = k_loops
-            )
-
-        # gc.collect()
-
         with torch.autocast(device_type=device, dtype=torch.float16):
-            prompt = rescorer.generate(descriptions)
-            for i, (desc, one_wav) in enumerate(zip(descriptions, prompt)):
-                name = f"samples/{seed}"
-                name += "_prompt"
-                name += f"_{desc}"
+            if promptlen > 0:
+                results = magnet.generate_continuation(descriptions=descriptions, prompt=prompt[..., :int(promptlen*musicgen.sample_rate)], prompt_sample_rate=musicgen.sample_rate)
+            else:
+                results = magnet.generate(descriptions=descriptions)
 
-                # Will save under {idx}.wav, with loudness normalization at -16 db LUFS.
-                audio_write(name, one_wav.to(device="cpu", dtype=torch.float32), rescorer.sample_rate, loudness_compressor=True, strategy="loudness", loudness_headroom_db=16)
-
-            wav = model.generate_continuation(descriptions=descriptions, prompt=prompt[..., :int(prompt_input_length*rescorer.sample_rate)], prompt_sample_rate=rescorer.sample_rate)
-            # wav = model.generate(descriptions=descriptions)
-
-        sr = model.sample_rate
-        # del model
-        # del rescorer
         gc.collect()
         torch.cuda.empty_cache()
 
-        for i, (desc, one_wav) in enumerate(zip(descriptions, wav)):
-            name = f"samples/{seed}"
-            name += "_loop" if loop_setup else ""
-            name += f"_{desc}"
+        for folder, wav in zip(folders, results):
+            name = f"samples/{folder}_{seed}/"
+            name += filename
 
-            # Will save under {idx}.wav, with loudness normalization at -16 db LUFS.
-            audio_write(name, one_wav.to(device="cpu", dtype=torch.float32), sr, loudness_compressor=True, strategy="loudness", loudness_headroom_db=16)
+            audio_write(name, wav.to(device="cpu", dtype=torch.float32), magnet.sample_rate, loudness_compressor=True, strategy="loudness", loudness_headroom_db=16)
